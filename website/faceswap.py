@@ -47,25 +47,9 @@ def rescale_image(image):
     image = image.resize((width, height))
     return image
 
-def query_faceswap(payload):
-     # Send to faceswap endpoint
-    headers = {
-        "Content-type": "application/json",
-        "X-OctoAI-Async": "1",
-        "Authorization": f"Bearer {OCTOAI_TOKEN}",
-    }
-    url = f"{FACESWAP_ENDPOINT_URL}/generate"
-    # Send image
-    response = requests.post(url=url, json=payload, headers=headers)
-    response.raise_for_status()
-    return response.json()
-
-def faceswap(my_upload, meta_prompt):
+def faceswap(my_upload):
     # UI columps
     colI, colO = st.columns(2)
-
-    # OctoAI client
-    oai_client = Client(OCTOAI_TOKEN)
 
     # Rotate image and perform some rescaling
     input_img = Image.open(my_upload)
@@ -73,30 +57,20 @@ def faceswap(my_upload, meta_prompt):
     input_img = rescale_image(input_img)
     colI.write("Input image")
     colI.image(input_img)
-    progress_text = "Face swapping in action..."
-    percent_complete = 0
-    progress_bar = colO.progress(percent_complete, text=progress_text)
+    colO.write(":hourglass_flowing_sand: Hang tight, it takes 20-30 seconds to perform the face swap...")
 
     # Query endpoint async
-    future = oai_client.infer_async(
-        f"{FACESWAP_ENDPOINT_URL}/predict",
-        {
-            "image": read_image(input_img)
-        }
-    )
-    # Poll on completion
-    time_step = 0.2
-    while not oai_client.is_future_ready(future):
-        time.sleep(time_step)
-        percent_complete = min(99, percent_complete+1)
-        if percent_complete == 99:
-            progress_text = "Face swapping is taking longer than usual, hang tight!"
-        progress_bar.progress(percent_complete, text=progress_text)
+    headers = {
+        "Content-type": "application/json",
+        # "Authorization": f"Bearer {OCTOAI_TOKEN}",
+    }
+    url = f"{FACESWAP_ENDPOINT_URL}/predict"
+    response = requests.post(url=url, json={"image": read_image(input_img)}, headers=headers)
     # Process results
-    results = oai_client.get_future_result(future)
-    progress_bar.empty()
+    print(response.content)
+    colO.empty()
     colO.write("Face swapped images :star2:")
-    faceswapped_image = Image.open(BytesIO(b64decode(results["image"])))
+    faceswapped_image = Image.open(BytesIO(b64decode(response["image"])))
     colO.image(faceswapped_image)
 
 
@@ -104,10 +78,10 @@ st.set_page_config(layout="wide", page_title="Face Swapper")
 
 st.write("## :tada: Face Swapper")
 st.write("\n\n")
-st.write("### :camera: Magically face swap photos with AI!")
+st.write("### :camera: Magically swap faces with AI!")
 
 st.sidebar.image("octoml-octo-ai-logo-color.png")
-my_upload = st.sidebar.file_uploader("Upload a photo", type=["png", "jpg", "jpeg"])
+my_upload = st.file_uploader("Upload a photo", type=["png", "jpg", "jpeg"])
 
 if my_upload is not None:
     if st.button('OctoShop!'):
