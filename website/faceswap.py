@@ -5,7 +5,6 @@ from base64 import b64encode, b64decode
 import requests
 from PIL import Image, ExifTags
 import os
-import time
 
 FACESWAP_ENDPOINT_URL = os.environ["FACESWAP_ENDPOINT_URL"]
 OCTOAI_TOKEN = os.environ["OCTOAI_TOKEN"]
@@ -57,20 +56,18 @@ def faceswap(my_upload):
     input_img = rescale_image(input_img)
     colI.write("Input image")
     colI.image(input_img)
-    colO.write(":hourglass_flowing_sand: Hang tight, it takes 20-30 seconds to perform the face swap...")
 
     # Query endpoint async
     headers = {
         "Content-type": "application/json",
-        # "Authorization": f"Bearer {OCTOAI_TOKEN}",
+        "Authorization": f"Bearer {OCTOAI_TOKEN}",
     }
     url = f"{FACESWAP_ENDPOINT_URL}/predict"
     response = requests.post(url=url, json={"image": read_image(input_img)}, headers=headers)
     # Process results
-    print(response.content)
     colO.empty()
     colO.write("Face swapped images :star2:")
-    faceswapped_image = Image.open(BytesIO(b64decode(response["image"])))
+    faceswapped_image = Image.open(BytesIO(b64decode(response.json()["completion"]["image"])))
     colO.image(faceswapped_image)
 
 
