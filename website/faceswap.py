@@ -76,7 +76,7 @@ st.write("## :tada: Face Swapper")
 st.write("\n\n")
 st.write("### :camera: Magically swap faces with AI!")
 
-st.sidebar.image("octoml-octo-ai-logo-color.png")
+# st.sidebar.image("octoml-octo-ai-logo-color.png")
 my_upload = st.file_uploader("Upload a photo", type=["png", "jpg", "jpeg"])
 
 if my_upload is not None:
