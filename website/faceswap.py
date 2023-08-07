@@ -1,5 +1,4 @@
 import streamlit as st
-from octoai.client import Client
 from io import BytesIO
 from base64 import b64encode, b64decode
 import requests
