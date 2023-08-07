@@ -11,4 +11,4 @@ echo "\"}" >> request.json
 
 curl -X POST http://${ENDPOINT}/predict \
     -H "Content-Type: application/json" \
-    --data @request.json | jq -r ".image" | base64 -d > output.png
+    --data @request.json | jq -r ".completion.image" | base64 -d > output.png

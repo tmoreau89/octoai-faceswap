@@ -91,7 +91,7 @@ class Model:
                 device=DEVICE
             )
 
-    def predict(self, inputs: typing.Dict[str, typing.Any]) -> typing.Dict[str, str]:
+    def predict(self, inputs: typing.Dict[str, str]) -> typing.Dict[str, str]:
         """Return interrogation for the given image.
 
         :param inputs: dict of inputs containing model inputs
@@ -240,7 +240,7 @@ class Model:
             cv2.imwrite(whole_img_path, whole_img)
 
         output_image = Image.open(output_file)
-        response = {"image": read_image(output_image)}
+        response = {"completion": {"image": read_image(output_image)}}
 
         # Clean up
         ntf_target.close()
