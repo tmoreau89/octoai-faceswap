@@ -70,9 +70,9 @@ def faceswap(my_upload):
     colO.image(faceswapped_image)
 
 
-st.set_page_config(layout="wide", page_title="Face Swapper")
+st.set_page_config(layout="wide", page_title="AI Face Swapper")
 
-st.write("## :tada: Face Swapper")
+st.write("## :tada: AI Face Swapper, powered by OctoAI")
 st.write("\n\n")
 st.write("### :camera: Magically swap faces with AI!")
 
@@ -80,5 +80,5 @@ st.write("### :camera: Magically swap faces with AI!")
 my_upload = st.file_uploader("Upload a photo", type=["png", "jpg", "jpeg"])
 
 if my_upload is not None:
-    if st.button('OctoShop!'):
+    if st.button('Face Swap!'):
         faceswap(my_upload)
