@@ -77,7 +77,7 @@ st.write("\n\n")
 st.write("### :camera: Magically swap faces with AI!")
 
 # st.sidebar.image("octoml-octo-ai-logo-color.png")
-my_upload = st.file_uploader("Upload a photo", type=["png", "jpg", "jpeg"])
+my_upload = st.file_uploader("Upload a photo with more than one person in the frame", type=["png", "jpg", "jpeg"])
 
 if my_upload is not None:
     if st.button('Face Swap!'):
