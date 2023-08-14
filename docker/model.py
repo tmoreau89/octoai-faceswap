@@ -16,7 +16,7 @@ from base64 import b64encode, b64decode
 
 from nsfw_checker import NSFWChecker
 from face_swapper import Inswapper, paste_to_whole
-from face_analyser import get_analysed_data
+from face_analyser import analyse_face
 from face_parsing import init_parsing_model, get_parsed_mask, mask_regions_to_list
 from face_enhancer import load_face_enhancer_model, cv2_interpolations
 from utils import split_list_by_lengths
@@ -28,7 +28,8 @@ BATCH_SIZE = 32
 DEVICE = "cuda"
 
 # FaceSwap params
-FACE_ENHANCER_NAME = "GFPGAN"
+FACE_ENHANCER_NAME = "REAL-ESRGAN 2x"
+# FACE_ENHANCER_NAME = "NONE"
 ENABLE_FACE_PARSER = False
 
 
@@ -51,17 +52,68 @@ def random_derangement(n):
             if v[0] != 0:
                 return tuple(v)
 
+def get_analysed_data(face_analyser, image_sequence, source_data, detect_condition, scale):
+    source_path, age = source_data
+    source_image = cv2.imread(source_path)
+    analysed_source = analyse_face(
+        source_image,
+        face_analyser,
+        return_single_face=False,
+        detect_condition=detect_condition,
+        scale=scale
+    )
+
+    whole_frame_eql_list = []
+    num_faces_per_frame = []
+
+    total_frames = len(image_sequence)
+    assert total_frames == 1
+
+    frame = cv2.imread(image_sequence[0])
+    analysed_faces = analyse_face(
+        frame,
+        face_analyser,
+        return_single_face=False,
+        detect_condition=detect_condition,
+        scale=scale
+    )
+    analysed_target_list = analysed_faces
+
+    print("target: {}".format(len(analysed_faces)))
+    print("source: {}".format(len(analysed_source)))
+
+    # Apply Sorting from biggest to smallest
+    targets = sorted(analysed_faces, key=lambda face: (face["bbox"][2] - face["bbox"][0]) * (face["bbox"][3] - face["bbox"][1]))
+    sources = sorted(analysed_source, key=lambda face: (face["bbox"][2] - face["bbox"][0]) * (face["bbox"][3] - face["bbox"][1]))
+
+    # Trim lists
+    if len(targets) < len(sources):
+        sources = sources[: len(targets)]
+    elif len(targets) > len(sources):
+        targets = targets[: len(sources)]
+
+    # Apply Sorting from left to right
+    analysed_target_list = sorted(targets, key=lambda face: face["bbox"][0])
+    analysed_source_list = sorted(sources, key=lambda face: face["bbox"][0])
+
+    assert len(analysed_target_list) == len(analysed_source_list)
+
+    for analysed_face in analysed_target_list:
+        whole_frame_eql_list.append(image_sequence[0])
+    num_faces_per_frame.append(len(analysed_target_list))
+
+    return analysed_target_list, analysed_source_list, whole_frame_eql_list, num_faces_per_frame
 
 class Model:
     """Wrapper for CLIP interrogator model."""
 
     def __init__(self):
         """Initialize the model."""
-        print("Loading NSFW detector model...")
-        self._nsfw_detector = NSFWChecker(
-            model_path="./assets/pretrained_models/open-nsfw.onnx",
-            providers=PROVIDER
-        )
+        # print("Loading NSFW detector model...")
+        # self._nsfw_detector = NSFWChecker(
+        #     model_path="./assets/pretrained_models/open-nsfw.onnx",
+        #     providers=PROVIDER
+        # )
         print("Loading face analyzer model...")
         self._face_analyzer = insightface.app.FaceAnalysis(
             name="buffalo_l",
@@ -84,12 +136,12 @@ class Model:
                 name=FACE_ENHANCER_NAME,
                 device=DEVICE
             )
-        if ENABLE_FACE_PARSER:
-            print("Loading face parser model...")
-            self._face_parser = init_parsing_model(
-                "./assets/pretrained_models/79999_iter.pth",
-                device=DEVICE
-            )
+        # if ENABLE_FACE_PARSER:
+        #     print("Loading face parser model...")
+        #     self._face_parser = init_parsing_model(
+        #         "./assets/pretrained_models/79999_iter.pth",
+        #         device=DEVICE
+        #     )
 
     def predict(self, inputs: typing.Dict[str, str]) -> typing.Dict[str, str]:
         """Return interrogation for the given image.
@@ -124,23 +176,30 @@ class Model:
         crop_left = 0
         crop_right = 511
 
-        # Process inputs
-        image = inputs.get("image", None)
-        image_bytes = BytesIO(b64decode(image))
-        image_pil = Image.open(image_bytes).convert('RGB')
+        # Src process inputs
+        src_image = inputs.get("src_image", None)
+        src_image_bytes = BytesIO(b64decode(src_image))
+        src_image_pil = Image.open(src_image_bytes).convert('RGB')
+
+        # Dst process inputs
+        dst_image = inputs.get("dst_image", None)
+        dst_image_bytes = BytesIO(b64decode(dst_image))
+        dst_image_pil = Image.open(dst_image_bytes).convert('RGB')
 
         # Target path
         ntf_target = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-        image_path = ntf_target.name
-        # Source path (same as target)
-        source_path = image_path
-        image_pil.save(source_path)
+        dst_image_path = ntf_target.name
+        dst_image_pil.save(dst_image_path)
+        # Source path
+        ntf_source = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        src_image_path = ntf_source.name
+        src_image_pil.save(src_image_path)
         # Output path
         ntf_output = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
         output_file = ntf_output.name
 
         # Write the output file for now
-        image_pil.save(output_file)
+        dst_image_pil.save(output_file)
         image_sequence = [output_file]
 
         # Prepare inputs
@@ -151,37 +210,35 @@ class Model:
             crop_left, crop_right = crop_right, crop_left
         crop_mask = (crop_top, 511-crop_bott, crop_left, 511-crop_right)
 
-
         ## ------------------------------ CONTENT CHECK ------------------------------
-        print("### \n ⌛ Checking contents...")
-        nsfw = self._nsfw_detector .is_nsfw(image_sequence)
-        if nsfw:
-            message = "NSFW Content detected !!!"
-            print(f"### \n 🔞 {message}")
-            assert not nsfw, message
-        torch.cuda.empty_cache()
+        # print("### \n ⌛ Checking contents...")
+        # nsfw = self._nsfw_detector .is_nsfw(image_sequence)
+        # if nsfw:
+        #     message = "NSFW Content detected !!!"
+        #     print(f"### \n 🔞 {message}")
+        #     assert not nsfw, message
+        # torch.cuda.empty_cache()
 
         ## ------------------------------ ANALYSE FACE ------------------------------
         print("### \n ⌛ Analyzing face data...")
         age = 25
-        source_data = source_path, age
+        source_data = src_image_path, age
         analysed_targets, analysed_sources, whole_frame_list, num_faces_per_frame = get_analysed_data(
             self._face_analyzer,
             image_sequence,
             source_data,
-            swap_condition="All Face",
             detect_condition="best detection",
             scale=face_scale
         )
-        perm = random_derangement(len(analysed_targets))
-        analysed_sources = []
-        for perm_idx in perm:
-            analysed_sources.append(analysed_targets[perm_idx])
-        for idx, targ in enumerate(analysed_sources):
-            print("SRC FACE #{}".format(idx))
-            print("\t bbox = {}".format(targ['bbox']))
-            print("\t gender = {}".format(targ['gender']))
-            print("\t age = {}".format(targ['age']))
+        # perm = random_derangement(len(analysed_targets))
+        # analysed_sources = []
+        # for perm_idx in perm:
+        #     analysed_sources.append(analysed_targets[perm_idx])
+        # for idx, targ in enumerate(analysed_sources):
+        #     print("SRC FACE #{}".format(idx))
+        #     print("\t bbox = {}".format(targ['bbox']))
+        #     print("\t gender = {}".format(targ['gender']))
+        #     print("\t age = {}".format(targ['age']))
 
         ## ------------------------------ SWAP FUNC ------------------------------
         print("### \n ⌛ Generating faces...")
